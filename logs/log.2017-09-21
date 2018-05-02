@@ -1,2 +1,0 @@
-[2017-09-21 23:56:12,578][ERROR] <class 'ValueError'> not enough values to unpack (expected 5, got 4) <traceback object at 0x0B84A0D0>
-[2017-09-21 23:58:55,071][ERROR] <class 'TypeError'> unsupported operand type(s) for -: 'str' and 'float' <traceback object at 0x0CA596C0>

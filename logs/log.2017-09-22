@@ -1,4 +1,0 @@
-[2017-09-22 08:10:45,044][ERROR] <class 'OverflowError'> Python int too large to convert to C long <traceback object at 0x0B312760>
-[2017-09-22 08:12:13,254][ERROR] <class 'TypeError'> extract_수급() missing 1 required positional argument: 'df_chart' <traceback object at 0x0BE52738>
-[2017-09-22 08:13:29,341][ERROR] <class 'AttributeError'> 'numpy.ndarray' object has no attribute 'to_csv' <traceback object at 0x0BF72CD8>
-[2017-09-22 08:31:06,926][ERROR] <class 'TypeError'> unsupported operand type(s) for -: 'str' and 'float' <traceback object at 0x0B1596C0>
