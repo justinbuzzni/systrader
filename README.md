@@ -7,3 +7,6 @@
 * MS Visual C++ 2010 x86 설치 (mfc100.dll 에러 해결)
 * MS Visual C++ 2012 x86 설치
 * KOA Studio 실행
+
+# 문서
+* https://quantylab.github.io/systrading.html
