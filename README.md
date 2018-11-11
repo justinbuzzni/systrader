@@ -9,4 +9,4 @@
 * KOA Studio 실행
 
 # 문서
-* https://quantylab.github.io/systrading.html
+* http://blog.quantylab.com/systrading.html
