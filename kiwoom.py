@@ -1,61 +1,43 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 import sys
+import os
 import time
 from collections import deque
+import threading
+from threading import Event
 from threading import Lock
+import logging
+from logging import FileHandler
 
 from PyQt5.QAxContainer import QAxWidget
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QEventLoop
 from PyQt5.QtWidgets import QApplication
 
 import numpy as np
 import pandas as pd
 
-import logging
-from logging.handlers import TimedRotatingFileHandler
-
 import util
-import model
 
-
-# 로그 파일 핸들러
-fh_log = TimedRotatingFileHandler("logs/log", when="midnight", encoding="utf-8", backupCount=120)
-fh_log.setLevel(logging.DEBUG)
-
-# 콘솔 핸들러
-sh = logging.StreamHandler()
-sh.setLevel(logging.DEBUG)
-
-# 로깅 포멧 설정
-formatter = logging.Formatter("[%(asctime)s][%(levelname)s] %(message)s")
-fh_log.setFormatter(formatter)
-sh.setFormatter(formatter)
-
-# 로거 생성
-logger = logging.getLogger("systrader")
-logger.setLevel(logging.DEBUG)
-logger.addHandler(fh_log)
-logger.addHandler(sh)
-
-# 화면 번호
-화면번호_조건검색 = "S"
-화면번호_주식기본정보_PREFIX = "B"  # 종목코드 붙여서 화면번호 구성
-화면번호_주식분봉차트조회_PREFIX = "C"  # 종목코드 붙여서 화면번호 구성
-화면번호_주문_PREFIX = "O"  # 종목코드 붙여서 화면번호 구성
-화면번호_계좌수익률 = "AP"  # Account Profit
-화면번호_예수금상세현황 = "AB"  # Account Balance
-화면번호_장시간 = "TIME"
 
 # 상수
-계좌번호 = "8091376411"  # 모의투자
-# 계좌번호 = "5053546898"  # 실투자
 종목별매수상한 = 1000000  # 종목별매수상한 백만원
 매수수수료비율 = 0.00015  # 매도시 평단가에 곱해서 사용
 매도수수료비율 = 0.00015 + 0.003  # 매도시 현재가에 곱해서 사용
-연속요청대기초 = 0.25  # 초당 5회 제한이므로 최소한 0.2초 대기해야 함
+화면번호 = "1234"
+
+
+# 로그 파일 핸들러
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+fh_log = FileHandler(os.path.join(BASE_DIR, 'logs/debug.log'), encoding='utf-8')
+fh_log.setLevel(logging.DEBUG)
+
+# 로거 생성 및 핸들러 등록
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.addHandler(fh_log)
 
 
 class SyncRequestDecorator:
@@ -65,64 +47,31 @@ class SyncRequestDecorator:
     @staticmethod
     def kiwoom_sync_request(func):
         def func_wrapper(self, *args, **kwargs):
-            self.request_thread_worker.request_queue.append((func, args, kwargs))
-
+            if kwargs.get('nPrevNext', 0) == 0:
+                logger.debug('초기 요청 준비')
+                self.params = {}
+                self.result = {}
+            # self.request_thread_worker.request_queue.append((func, args, kwargs))
+            logger.debug("요청 실행: %s %s %s" % (func.__name__, args, kwargs))
+            func(self, *args, **kwargs)
+            self.event = QEventLoop()
+            self.event.exec_()
+            return self.result  # 콜백 결과 반환
         return func_wrapper
 
     @staticmethod
     def kiwoom_sync_callback(func):
         def func_wrapper(self, *args, **kwargs):
-            logger.debug("키움 함수 콜백: %s %s %s" % (func.__name__, args, kwargs))
+            logger.debug("요청 콜백: %s %s %s" % (func.__name__, args, kwargs))
             func(self, *args, **kwargs)  # 콜백 함수 호출
-            if self.request_thread_worker.request_thread_lock.locked():
-                self.request_thread_worker.request_thread_lock.release()  # 요청 쓰레드 잠금 해제
-
         return func_wrapper
 
 
-class RequestThreadWorker(QObject):
-    def __init__(self, caller):
-        """요청 쓰레드
-        """
-        super().__init__()
+class Kiwoom(QAxWidget):
 
-        self.caller = caller
-
-        self.request_queue = deque()
-        self.request_thread_lock = Lock()
-
-        # 간혹 요청에 대한 결과가 콜백으로 오지 않음
-        # 마지막 요청을 저장해 뒀다가 일정 시간이 지나도 결과가 안오면 재요청
-        self.retry_timer = None
-
-    def retry(self, request):
-        logger.debug("키움 함수 재시도: %s %s %s" % (request[0].__name__, request[1], request[2]))
-        self.request_queue.appendleft(request)
-
-    def run(self):
-        while True:
-            # 큐에 요청이 있으면 하나 뺌
-            # 없으면 블락상태로 있음
-            try:
-                request = self.request_queue.popleft()
-            except IndexError as e:
-                time.sleep(연속요청대기초)
-                continue
-
-            # 요청에대한 결과 대기
-            if not self.request_thread_lock.acquire(blocking=True, timeout=30):
-                # 요청 실패
-                time.sleep(연속요청대기초)
-                self.retry(request)  # 실패한 요청 재시도
-
-            # 요청 실행
-            logger.debug("키움 함수 실행: %s %s %s" % (request[0].__name__, request[1], request[2]))
-            request[0](self.caller, *request[1], **request[2])
-
-            time.sleep(연속요청대기초)  # 0.2초 이상 대기 후 마무리
-
-
-class Kiwoom(QObject):
+    # 초당 5회 제한이므로 최소한 0.2초 대기해야 함
+    # (2018년 10월 기준) 1시간에 1000회 제한하므로 3.6초 이상 대기해야 함
+    연속요청대기초 = 4.0
 
     def __init__(self):
         """메인 객체
@@ -130,52 +79,22 @@ class Kiwoom(QObject):
         super().__init__()
 
         # 키움 시그널 연결
-        self.kiwoom = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
-        self.kiwoom.OnEventConnect.connect(self.kiwoom_OnEventConnect)
-        self.kiwoom.OnReceiveTrData.connect(self.kiwoom_OnReceiveTrData)
-        self.kiwoom.OnReceiveRealData.connect(self.kiwoom_OnReceiveRealData)
-        self.kiwoom.OnReceiveConditionVer.connect(self.kiwoom_OnReceiveConditionVer)
-        self.kiwoom.OnReceiveTrCondition.connect(self.kiwoom_OnReceiveTrCondition)
-        self.kiwoom.OnReceiveRealCondition.connect(self.kiwoom_OnReceiveRealCondition)
-        self.kiwoom.OnReceiveChejanData.connect(self.kiwoom_OnReceiveChejanData)
-        self.kiwoom.OnReceiveMsg.connect(self.kiwoom_OnReceiveMsg)
-
-        # 데이터
-        self.set_stock2monitor = set()  # {종목코드}
-        self.set_stock_ordered = set()  # {종목코드}
-
-        # {종목코드: 종목기본정보}
-        self.dict_stock = {}
-
-        # {종목코드: 보유종목기본정보}
-        # 보유종목기본정보: ["종목코드", "종목명", "현재가", "매입가", "보유수량"]
-        self.dict_holding = {}
-
-        # 차트
-        self.dict_chart_minute = {}  # {종목코드: 분봉차트}
-        self.dict_chart_day = {}  # {종목코드: 일봉차트}
-        self.dict_chart_week = {}  # {종목코드: 주봉차트}
-        self.dict_chart_month = {}  # {종목코드: 월봉차트}
-        self.int_주문가능금액 = 0
+        self.setControl("KHOPENAPI.KHOpenAPICtrl.1")
+        self.OnEventConnect.connect(self.kiwoom_OnEventConnect)
+        self.OnReceiveTrData.connect(self.kiwoom_OnReceiveTrData)
+        # self.OnReceiveRealData.connect(self.kiwoom_OnReceiveRealData)
+        # self.OnReceiveConditionVer.connect(self.kiwoom_OnReceiveConditionVer)
+        # self.OnReceiveTrCondition.connect(self.kiwoom_OnReceiveTrCondition)
+        # self.OnReceiveRealCondition.connect(self.kiwoom_OnReceiveRealCondition)
+        # self.OnReceiveChejanData.connect(self.kiwoom_OnReceiveChejanData)
+        # self.OnReceiveMsg.connect(self.kiwoom_OnReceiveMsg)
 
         # 파라미터
-        self.dict_param = {}
+        self.params = {}
 
-        # 콜백
-        self.dict_callback = {}
-
-        # 요청 쓰레드
-        self.request_thread_worker = RequestThreadWorker(self)
-        self.request_thread = QThread()
-        self.request_thread_worker.moveToThread(self.request_thread)
-        self.request_thread.started.connect(self.request_thread_worker.run)
-        self.request_thread.start()
-
-    def set_callback(self, req, cb):
-        self.dict_callback[req] = cb
-
-    def set_param(self, req, dict_param):
-        self.dict_param[req] = dict_param
+        # 요청 결과
+        self.event = None
+        self.result = {}
 
     # -------------------------------------
     # 로그인 관련함수
@@ -187,7 +106,7 @@ class Kiwoom(QObject):
         :param kwargs:
         :return: 1: 로그인 요청 성공, 0: 로그인 요청 실패
         """
-        lRet = self.kiwoom.dynamicCall("CommConnect()")
+        lRet = self.dynamicCall("CommConnect()")
         return lRet
 
     def kiwoom_GetConnectState(self, **kwargs):
@@ -196,7 +115,7 @@ class Kiwoom(QObject):
         :param kwargs:
         :return: 0: 연결안됨, 1: 연결됨
         """
-        lRet = self.kiwoom.dynamicCall("GetConnectState()")
+        lRet = self.dynamicCall("GetConnectState()")
         return lRet
 
     @SyncRequestDecorator.kiwoom_sync_callback
@@ -215,6 +134,10 @@ class Kiwoom(QObject):
             logger.debug("서버접속 실패")
         elif nErrCode == 102:
             logger.debug("버전처리 실패")
+        
+        self.result['result'] = nErrCode
+        if self.event is not None:
+            self.event.exit()
 
     # -------------------------------------
     # 조회 관련함수
@@ -225,7 +148,7 @@ class Kiwoom(QObject):
         :param sValue:
         :return:
         """
-        res = self.kiwoom.dynamicCall("SetInputValue(QString, QString)", [sID, sValue])
+        res = self.dynamicCall("SetInputValue(QString, QString)", sID, sValue)
         return res
 
     def kiwoom_CommRqData(self, sRQName, sTrCode, nPrevNext, sScreenNo):
@@ -237,8 +160,7 @@ class Kiwoom(QObject):
         :param sScreenNo:
         :return:
         """
-        res = self.kiwoom.dynamicCall("CommRqData(QString, QString, int, QString)",
-                                      [sRQName, sTrCode, nPrevNext, sScreenNo])
+        res = self.dynamicCall("CommRqData(QString, QString, int, QString)", sRQName, sTrCode, nPrevNext, sScreenNo)
         return res
 
     def kiwoom_GetRepeatCnt(self, sTRCode, sRQName):
@@ -248,7 +170,7 @@ class Kiwoom(QObject):
         :param sRQName:
         :return:
         """
-        res = self.kiwoom.dynamicCall("GetRepeatCnt(QString, QString)", [sTRCode, sRQName])
+        res = self.dynamicCall("GetRepeatCnt(QString, QString)", sTRCode, sRQName)
         return res
 
     def kiwoom_GetCommData(self, sTRCode, sRQName, nIndex, sItemName):
@@ -260,8 +182,7 @@ class Kiwoom(QObject):
         :param sItemName:
         :return:
         """
-        res = self.kiwoom.dynamicCall("GetCommData(QString, QString, int, QString)",
-                                      [sTRCode, sRQName, nIndex, sItemName])
+        res = self.dynamicCall("GetCommData(QString, QString, int, QString)", sTRCode, sRQName, nIndex, sItemName)
         return res
 
     @SyncRequestDecorator.kiwoom_sync_request
@@ -272,10 +193,11 @@ class Kiwoom(QObject):
         :return:
         """
         res = self.kiwoom_SetInputValue("종목코드", strCode)
-        res = self.kiwoom_CommRqData("주식기본정보", "OPT10001", 0, 화면번호_주식기본정보_PREFIX + strCode)
+        res = self.kiwoom_CommRqData("주식기본정보", "OPT10001", 0, 화면번호)
+        return res
 
     @SyncRequestDecorator.kiwoom_sync_request
-    def kiwoom_TR_OPT10080_주식분봉차트조회(self, strCode, tick=1, fix=1, nPrevNext=0, **kwargs):
+    def kiwoom_TR_OPT10080_주식분봉차트조회(self, strCode, tick=1, fix=1, size=240, nPrevNext=0, **kwargs):
         """주식분봉차트조회
         :param strCode: 종목코드
         :param tick: 틱범위 (1:1분, 3:3분, 5:5분, 10:10분, 15:15분, 30:30분, 45:45분, 60:60분)
@@ -284,10 +206,45 @@ class Kiwoom(QObject):
         :param kwargs:
         :return:
         """
+        self.params['size'] = size
         res = self.kiwoom_SetInputValue("종목코드", strCode)
+        # res = self.kiwoom_SetInputValue("기준일자", 기준일자)
         res = self.kiwoom_SetInputValue("틱범위", str(tick))
         res = self.kiwoom_SetInputValue("수정주가구분", str(fix))
-        res = self.kiwoom_CommRqData("주식분봉차트조회", "opt10080", nPrevNext, 화면번호_주식분봉차트조회_PREFIX + strCode)
+        res = self.kiwoom_CommRqData("주식분봉차트조회", "opt10080", nPrevNext, 화면번호)
+        return res
+    
+    @SyncRequestDecorator.kiwoom_sync_request
+    def kiwoom_TR_OPT10081_주식일봉차트조회(self, strCode, tick=1, fix=1, size=240, nPrevNext=0, **kwargs):
+        """주식일봉차트조회
+        :param strCode: 종목코드
+        :param tick: 틱범위
+        :param fix: 수정주가구분 (0 or 1, 수신데이터 1:유상증자, 2:무상증자, 4:배당락, 8:액면분할, 16:액면병합, 32:기업합병, 64:감자, 256:권리락)
+        :param nPrevNext: 
+        :param kwargs:
+        :return:
+        """
+        self.params['size'] = size
+        res = self.kiwoom_SetInputValue("종목코드", strCode)
+        # res = self.kiwoom_SetInputValue("기준일자", 기준일자)
+        res = self.kiwoom_SetInputValue("틱범위", str(tick))
+        res = self.kiwoom_SetInputValue("수정주가구분", str(fix))
+        res = self.kiwoom_CommRqData("주식일봉차트조회", "opt10081", nPrevNext, 화면번호)
+        return res
+
+    @SyncRequestDecorator.kiwoom_sync_request
+    def kiwoom_TR_OPT20006_업종일봉조회(self, strCode, size=240, nPrevNext=0, **kwargs):
+        """업종일봉조회
+        :param strCode: 업종코드 (001: 코스피, 002: 대형주, 003: 중형주, 004: 소형주, 101: 코스닥, 201: 코스피200, 302: KOSTAR, 701: KRX100)
+        :param nPrevNext: 
+        :param kwargs:
+        :return:
+        """
+        self.params['size'] = size
+        res = self.kiwoom_SetInputValue("업종코드", strCode)
+        # res = self.kiwoom_SetInputValue("기준일자", 기준일자)
+        res = self.kiwoom_CommRqData("업종일봉조회", "opt20006", nPrevNext, 화면번호)
+        return res
 
     @SyncRequestDecorator.kiwoom_sync_request
     def kiwoom_TR_OPT10085_계좌수익률요청(self, 계좌번호, **kwargs):
@@ -297,7 +254,8 @@ class Kiwoom(QObject):
         :return:
         """
         res = self.kiwoom_SetInputValue("계좌번호", 계좌번호)
-        res = self.kiwoom_CommRqData("계좌수익률요청", "opt10085", 0, 화면번호_계좌수익률)
+        res = self.kiwoom_CommRqData("계좌수익률요청", "opt10085", 0, 화면번호)
+        return res
 
     @SyncRequestDecorator.kiwoom_sync_request
     def kiwoom_TR_OPW00001_예수금상세현황요청(self, 계좌번호, **kwargs):
@@ -307,7 +265,8 @@ class Kiwoom(QObject):
         :return:
         """
         res = self.kiwoom_SetInputValue("계좌번호", 계좌번호)
-        res = self.kiwoom_CommRqData("예수금상세현황요청", "opw00001", 0, 화면번호_예수금상세현황)
+        res = self.kiwoom_CommRqData("예수금상세현황요청", "opw00001", 0, 화면번호)
+        return res
 
     @SyncRequestDecorator.kiwoom_sync_callback
     def kiwoom_OnReceiveTrData(self, sScrNo, sRQName, sTRCode, sRecordName, sPreNext, nDataLength, sErrorCode, sMessage,
@@ -363,77 +322,119 @@ class Kiwoom(QObject):
                 dict_stock[item_name] = item_value
             if "시세표성정보" in self.dict_callback:
                 self.dict_callback["시세표성정보"](dict_stock)
-
-        elif sRQName == "주식분봉차트조회":
+        
+        elif sRQName == "주식분봉차트조회" or sRQName == "주식일봉차트조회":
             cnt = self.kiwoom_GetRepeatCnt(sTRCode, sRQName)
 
             종목코드 = self.kiwoom_GetCommData(sTRCode, sRQName, 0, "종목코드")
             종목코드 = 종목코드.strip()
 
-            dict_chart_tmp = {}  # 임시로 현재 조회된 차트만 저장
-            done_범위조회 = False  # 파라미터 처리 플래그
+            done = False  # 파라미터 처리 플래그
+            result = self.result.get('result', [])
+            cnt_acc = len(result)
 
-            for nIdx in range(cnt):
+            list_item_name = []
+            if sRQName == '주식분봉차트조회':
                 # list_item_name = ["현재가", "거래량", "체결시간", "시가", "고가",
                 #                   "저가", "수정주가구분", "수정비율", "대업종구분", "소업종구분",
                 #                   "종목정보", "수정주가이벤트", "전일종가"]
                 list_item_name = ["체결시간", "시가", "고가", "저가", "현재가", "거래량"]
-                dict_item = {}
+            elif sRQName == '주식일봉차트조회':
+                list_item_name = ["일자", "시가", "고가", "저가", "현재가", "거래량"]
+
+            for nIdx in range(cnt):
+                item = {'종목코드': 종목코드}
                 for item_name in list_item_name:
                     item_value = self.kiwoom_GetCommData(sTRCode, sRQName, nIdx, item_name)
                     item_value = item_value.strip()
-                    dict_item[item_name] = item_value
-                date_last = int(dict_item["체결시간"])
+                    item[item_name] = item_value
 
-                # 범위조회 파라미터 처리
-                dict_param = self.dict_param.get("주식분봉차트조회", {})
-                date_from = int(dict_param.get("date_from", "000000000000"))
-                date_to = int(dict_param.get("date_to", "999999999999"))
+                # 범위조회 파라미터
+                date_from = int(self.params.get("date_from", "000000000000"))
+                date_to = int(self.params.get("date_to", "999999999999"))
 
-                if date_last > date_to:
-                    continue
-                elif date_last < date_from:
-                    done_범위조회 = True
+                # 결과는 최근 데이터에서 오래된 데이터 순서로 정렬되어 있음
+                date = None
+                if sRQName == '주식분봉차트조회':
+                    date = int(item["체결시간"])
+                elif sRQName == '주식일봉차트조회':
+                    date = int(item["일자"])
+                    if date > date_to:
+                        continue
+                    elif date < date_from:
+                        done = True
+                        break
+                
+                # 개수 파라미터처리
+                if cnt_acc + nIdx >= self.params.get('size', float("inf")):
+                    done = True
                     break
 
-                # 아이템을 리스트에 추가
-                for item_name, item_value in dict_item.items():
-                    if item_name not in dict_chart_tmp:
-                        dict_chart_tmp[item_name] = [item_value]
-                    else:
-                        dict_chart_tmp[item_name].append(item_value)
-
-            # 이전에 조회된 차트 불러오기
-            # 없으면 새로운 딕셔너리 저장
-            if sPreNext == '0':
-                dict_chart = {}
-            else:
-                dict_chart = self.dict_chart_minute.get(종목코드, {})
-
-            # 조회 결과 차트에 추가
-            for k, v in dict_chart_tmp.items():
-                if type(v) is list:
-                    dict_chart[k] = dict_chart.get(k, []) + v
-                else:
-                    dict_chart[k] = dict_chart.get(k, []) + [v]
-
-            # 개수 파라미터처리
-            dict_chart['cnt'] = cnt + dict_chart.get('cnt', 0)
-            if dict_chart['cnt'] >= dict_param.get('size', float("inf")):
-                done_범위조회 = True
+                result.append(util.convert_kv(item))
 
             # 차트 업데이트
-            self.dict_chart_minute[종목코드] = dict_chart
+            self.result['result'] = result
 
-            if not done_범위조회 and cnt > 0:
-                # 분봉차트 추가요청
-                self.kiwoom_TR_OPT10080_주식분봉차트조회(종목코드, nPrevNext=2)
+            if not done and cnt > 0 and sPreNext == '2':
+                self.result['nPrevNext'] = 2
+                self.result['done'] = False
             else:
                 # 연속조회 완료
-                logger.debug("분봉차트 연속조회완료")
-                self.dict_chart_minute[종목코드]["연속조회완료"] = True
-                if '주식분봉차트조회' in self.dict_callback:
-                    self.dict_callback['주식분봉차트조회'](dict_chart)
+                logger.debug("차트 연속조회완료")
+                self.result['nPrevNext'] = 0
+                self.result['done'] = True
+
+        elif sRQName == "업종일봉조회":
+            cnt = self.kiwoom_GetRepeatCnt(sTRCode, sRQName)
+
+            업종코드 = self.kiwoom_GetCommData(sTRCode, sRQName, 0, "업종코드")
+            업종코드 = 업종코드.strip()
+
+            done = False  # 파라미터 처리 플래그
+            result = self.result.get('result', [])
+            cnt_acc = len(result)
+
+            list_item_name = []
+            if sRQName == '업종일봉조회':
+                list_item_name = ["일자", "시가", "고가", "저가", "현재가", "거래량"]
+
+            for nIdx in range(cnt):
+                item = {'업종코드': 업종코드}
+                for item_name in list_item_name:
+                    item_value = self.kiwoom_GetCommData(sTRCode, sRQName, nIdx, item_name)
+                    item_value = item_value.strip()
+                    item[item_name] = item_value
+
+                # 결과는 최근 데이터에서 오래된 데이터 순서로 정렬되어 있음
+                date = int(item["일자"])
+
+                # 범위조회 파라미터 처리
+                date_from = int(self.params.get("date_from", "000000000000"))
+                date_to = int(self.params.get("date_to", "999999999999"))
+                if date > date_to:
+                    continue
+                elif date < date_from:
+                    done = True
+                    break
+                
+                # 개수 파라미터처리
+                if cnt_acc + nIdx >= self.params.get('size', float("inf")):
+                    done = True
+                    # break
+
+                result.append(util.convert_kv(item))
+
+            # 차트 업데이트
+            self.result['result'] = result
+
+            if not done and cnt > 0 and sPreNext == '2':
+                self.result['nPrevNext'] = 2
+                self.result['done'] = False
+            else:
+                # 연속조회 완료
+                logger.debug("차트 연속조회완료")
+                self.result['nPrevNext'] = 0
+                self.result['done'] = True
 
         elif sRQName == "계좌수익률요청":
             cnt = self.kiwoom_GetRepeatCnt(sTRCode, sRQName)
@@ -451,6 +452,9 @@ class Kiwoom(QObject):
                 logger.debug("계좌수익: %s" % (dict_holding,))
             if '계좌수익률요청' in self.dict_callback:
                 self.dict_callback['계좌수익률요청'](self.dict_holding)
+
+        if self.event is not None:
+            self.event.exit()
 
     # -------------------------------------
     # 실시간 관련함수
@@ -485,7 +489,7 @@ class Kiwoom(QObject):
         :param str:
         :return:
         """
-        lRet = self.kiwoom.dynamicCall("SetRealReg(QString, QString, QString, QString)",
+        lRet = self.dynamicCall("SetRealReg(QString, QString, QString, QString)",
                                        [strScreenNo, strCodeList, strFidList, strOptType])
         return lRet
 
@@ -499,7 +503,7 @@ class Kiwoom(QObject):
         조건검색의 조건목록 요청
         :return:
         """
-        lRet = self.kiwoom.dynamicCall("GetConditionLoad()")
+        lRet = self.dynamicCall("GetConditionLoad()")
         return lRet
 
     @SyncRequestDecorator.kiwoom_sync_callback
@@ -514,14 +518,13 @@ class Kiwoom(QObject):
         :return:
         """
         if lRet:
-            sRet = self.kiwoom.dynamicCall("GetConditionNameList()")
+            sRet = self.dynamicCall("GetConditionNameList()")
             pairs = [idx_name.split('^') for idx_name in [cond for cond in sRet.split(';')]]
             if len(pairs) > 0:
                 nIndex = pairs[0][0]
                 strConditionName = pairs[0][1]
                 self.kiwoom_SendCondition(strConditionName, nIndex)
 
-    @SyncRequestDecorator.kiwoom_sync_request
     def kiwoom_SendCondition(self, strConditionName, nIndex, **kwargs):
         """
         조검검색 실시간 요청. OnReceiveConditionVer() 안에서 호출해야 함.
@@ -538,9 +541,9 @@ class Kiwoom(QObject):
         :param kwargs:
         :return: 1: 성공, 0: 실패
         """
-        lRet = self.kiwoom.dynamicCall(
+        lRet = self.dynamicCall(
             "SendCondition(QString, QString, int, int)",
-            [화면번호_조건검색, strConditionName, nIndex, 1]
+            [화면번호, strConditionName, nIndex, 1]
         )
         return lRet
 
@@ -597,7 +600,6 @@ class Kiwoom(QObject):
     # 주문 관련함수
     # OnReceiveTRData(), OnReceiveMsg(), OnReceiveChejan()
     # -------------------------------------
-    @SyncRequestDecorator.kiwoom_sync_callback
     def kiwoom_SendOrder(self, sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb, sOrgOrderNo,
                          **kwargs):
         """주문
@@ -629,11 +631,10 @@ class Kiwoom(QObject):
         """
         logger.debug("주문: %s %s %s %s %s %s %s %s %s" % (
         sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb, sOrgOrderNo))
-        lRet = self.kiwoom.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
+        lRet = self.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
                                        [sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb,
                                         sOrgOrderNo])
 
-    @SyncRequestDecorator.kiwoom_sync_callback
     def kiwoom_OnReceiveMsg(self, sScrNo, sRQName, sTrCode, sMsg, **kwargs):
         """주문성공, 실패 메시지
         :param sScrNo: 화면번호
@@ -645,7 +646,6 @@ class Kiwoom(QObject):
         """
         logger.debug("주문/잔고: %s %s %s %s" % (sScrNo, sRQName, sTrCode, sMsg))
 
-    @SyncRequestDecorator.kiwoom_sync_callback
     def kiwoom_OnReceiveChejanData(self, sGubun, nItemCnt, sFIdList, **kwargs):
         """주문접수, 체결, 잔고발생시
         :param sGubun: 체결구분 접수와 체결시 '0'값, 국내주식 잔고전달은 '1'값, 파생잔고 전달은 '4"
@@ -777,5 +777,21 @@ class Kiwoom(QObject):
         :param nFid: 실시간 타입에 포함된FID
         :return:
         """
-        res = self.kiwoom.dynamicCall("GetChejanData(int)", [nFid])
+        res = self.dynamicCall("GetChejanData(int)", [nFid])
         return res
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    hts = Kiwoom()
+
+    # login
+    if hts.kiwoom_GetConnectState() == 0:
+        logger.debug('로그인 시도')
+        res = hts.kiwoom_CommConnect()
+        logger.debug('로그인 결과: {}'.format(res))
+        if res.get('result') != 0:
+            sys.exit()
+
+    # something
+    pass
