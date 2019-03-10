@@ -28,20 +28,26 @@ import util
 매도수수료비율 = 0.00015 + 0.003  # 매도시 현재가에 곱해서 사용
 화면번호 = "1234"
 
+# Timestamp for loggers
+formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
+                              datefmt='%Y-%m-%d %H:%M:%S')
 
 # 로그 파일 핸들러
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 fh_log = FileHandler(os.path.join(BASE_DIR, 'logs/debug.log'), encoding='utf-8')
 fh_log.setLevel(logging.DEBUG)
+fh_log.setFormatter(formatter)
 
 # stdout handler
 stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setFormatter(formatter)
 
 # 로거 생성 및 핸들러 등록
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(fh_log)
 logger.addHandler(stdout_handler)
+
 
 
 class SyncRequestDecorator:
@@ -75,7 +81,8 @@ class Kiwoom(QAxWidget):
 
     # 초당 5회 제한이므로 최소한 0.2초 대기해야 함
     # (2018년 10월 기준) 1시간에 1000회 제한하므로 3.6초 이상 대기해야 함
-    연속요청대기초 = 4.0
+    #연속요청대기초 = 4.0
+    연속요청대기초 = 0.5 # But I won't be making too many requests so...
 
     def __init__(self):
         """메인 객체
@@ -95,6 +102,10 @@ class Kiwoom(QAxWidget):
 
         # 파라미터
         self.params = {}
+
+        # I dunno what these are but this is missing
+        self.dict_stock = {}
+        self.dict_callback = {}
 
         # 요청 결과
         self.event = None
@@ -121,6 +132,17 @@ class Kiwoom(QAxWidget):
         """
         lRet = self.dynamicCall("GetConnectState()")
         return lRet
+
+    def kiwoom_GetAccList(self):
+        """
+        Get account list
+        :return: accout list, in python list form.
+        """
+        raw = self.dynamicCall("GetLoginInfo(\"ACCLIST\")")
+        result = raw.split(";")
+        if result[-1] == '':
+            result.pop()
+        return result
 
     @SyncRequestDecorator.kiwoom_sync_callback
     def kiwoom_OnEventConnect(self, nErrCode, **kwargs):
@@ -263,7 +285,7 @@ class Kiwoom(QAxWidget):
 
     @SyncRequestDecorator.kiwoom_sync_request
     def kiwoom_TR_OPW00001_예수금상세현황요청(self, 계좌번호, **kwargs):
-        """계좌수익률요청
+        """예수금상세현황요청
         :param 계좌번호: 계좌번호
         :param kwargs:
         :return:
@@ -442,6 +464,8 @@ class Kiwoom(QAxWidget):
 
         elif sRQName == "계좌수익률요청":
             cnt = self.kiwoom_GetRepeatCnt(sTRCode, sRQName)
+            assert self.dict_holding is None # The request will set this to None.
+            result = {}
             for nIdx in range(cnt):
                 list_item_name = ["종목코드", "종목명", "현재가", "매입가", "보유수량"]
                 dict_holding = {item_name: self.kiwoom_GetCommData(sTRCode, sRQName, nIdx, item_name).strip() for
@@ -452,10 +476,17 @@ class Kiwoom(QAxWidget):
                 dict_holding["보유수량"] = util.safe_cast(dict_holding["보유수량"], int, 0)
                 dict_holding["수익"] = (dict_holding["현재가"] - dict_holding["총매입가"]) * dict_holding["보유수량"]
                 종목코드 = dict_holding["종목코드"]
-                self.dict_holding[종목코드] = dict_holding
+                result[종목코드] = dict_holding
                 logger.debug("계좌수익: %s" % (dict_holding,))
+            self.dict_holding = result
             if '계좌수익률요청' in self.dict_callback:
                 self.dict_callback['계좌수익률요청'](self.dict_holding)
+        elif sRQName.startswith("RQ_"):
+            logger.debug("RQ handler")
+            result = self.kiwoom_GetCommData(sTRCode, sRQName, 0, "")
+            logger.debug("result: {}".format(result))
+        else:
+            logger.debug("Unknown sRQName: {}".format(sRQName))
 
         if self.event is not None:
             self.event.exit()
@@ -638,6 +669,7 @@ class Kiwoom(QAxWidget):
         lRet = self.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
                                        [sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb,
                                         sOrgOrderNo])
+        #logger.debug("kiwoom_SendOrder.lRet:", lRet)
 
     def kiwoom_OnReceiveMsg(self, sScrNo, sRQName, sTrCode, sMsg, **kwargs):
         """주문성공, 실패 메시지
@@ -795,6 +827,7 @@ if __name__ == '__main__':
         res = hts.kiwoom_CommConnect()
         logger.debug('로그인 결과: {}'.format(res))
         if res.get('result') != 0:
+            print("Login failed")
             sys.exit()
 
     # something
