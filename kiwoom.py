@@ -34,10 +34,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 fh_log = FileHandler(os.path.join(BASE_DIR, 'logs/debug.log'), encoding='utf-8')
 fh_log.setLevel(logging.DEBUG)
 
+# stdout handler
+stdout_handler = logging.StreamHandler(sys.stdout)
+
 # 로거 생성 및 핸들러 등록
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(fh_log)
+logger.addHandler(stdout_handler)
 
 
 class SyncRequestDecorator:
