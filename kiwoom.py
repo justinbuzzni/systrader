@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import datetime
 import sys
 import os
 import time
-from collections import deque
 import threading
-from threading import Event
-from threading import Lock
+from threading import Event, Lock
 import logging
 from logging import FileHandler
 
@@ -33,8 +32,11 @@ formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
                               datefmt='%Y-%m-%d %H:%M:%S')
 
 # 로그 파일 핸들러
+now = datetime.datetime.now().isoformat()[:10]
+logf = now + ".log"
+logf = os.path.join("logs", logf)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-fh_log = FileHandler(os.path.join(BASE_DIR, 'logs/debug.log'), encoding='utf-8')
+fh_log = FileHandler(os.path.join(BASE_DIR, logf), encoding='utf-8')
 fh_log.setLevel(logging.DEBUG)
 fh_log.setFormatter(formatter)
 
@@ -81,11 +83,12 @@ class Kiwoom(QAxWidget):
 
     # 초당 5회 제한이므로 최소한 0.2초 대기해야 함
     # (2018년 10월 기준) 1시간에 1000회 제한하므로 3.6초 이상 대기해야 함
-    #연속요청대기초 = 4.0
-    연속요청대기초 = 0.5 # But I won't be making too many requests so...
+    #rate_limit = 4.0
+    rate_limit = 0.5 # But I won't be making too many requests so... Uhm... unused.
 
     def __init__(self):
-        """메인 객체
+        """
+        메인 객체
         """
         super().__init__()
 
@@ -97,8 +100,8 @@ class Kiwoom(QAxWidget):
         # self.OnReceiveConditionVer.connect(self.kiwoom_OnReceiveConditionVer)
         # self.OnReceiveTrCondition.connect(self.kiwoom_OnReceiveTrCondition)
         # self.OnReceiveRealCondition.connect(self.kiwoom_OnReceiveRealCondition)
-        # self.OnReceiveChejanData.connect(self.kiwoom_OnReceiveChejanData)
-        # self.OnReceiveMsg.connect(self.kiwoom_OnReceiveMsg)
+        self.OnReceiveChejanData.connect(self.kiwoom_OnReceiveChejanData)
+        self.OnReceiveMsg.connect(self.kiwoom_OnReceiveMsg)
 
         # 파라미터
         self.params = {}
@@ -635,6 +638,7 @@ class Kiwoom(QAxWidget):
     # 주문 관련함수
     # OnReceiveTRData(), OnReceiveMsg(), OnReceiveChejan()
     # -------------------------------------
+    @SyncRequestDecorator.kiwoom_sync_request
     def kiwoom_SendOrder(self, sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb, sOrgOrderNo,
                          **kwargs):
         """주문
@@ -669,7 +673,7 @@ class Kiwoom(QAxWidget):
         lRet = self.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
                                        [sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb,
                                         sOrgOrderNo])
-        #logger.debug("kiwoom_SendOrder.lRet:", lRet)
+        logger.debug("kiwoom_SendOrder.lRet: {}".format(lRet))
 
     def kiwoom_OnReceiveMsg(self, sScrNo, sRQName, sTrCode, sMsg, **kwargs):
         """주문성공, 실패 메시지
@@ -762,8 +766,8 @@ class Kiwoom(QAxWidget):
                 dict_contract["종목코드"] = 종목코드
 
             # 종목을 대기 리스트에서 제거
-            if 종목코드 in self.set_stock_ordered:
-                self.set_stock_ordered.remove(종목코드)
+            #if 종목코드 in self.set_stock_ordered:
+            #    self.set_stock_ordered.remove(종목코드)
 
             # 매수 체결일 경우 보유종목에 빈 dict 추가 (키만 추가하기 위해)
             if "매수" in dict_contract["주문구분"]:

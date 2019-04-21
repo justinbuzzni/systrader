@@ -108,9 +108,7 @@ class OrderHandler(RequestHandler):
             sHogaGb,
             "" # original order number to cancel or correct.
         )
-
         logger.debug("Order sent.")
-        #self.write(result)
 
 
 class BalanceHandler(RequestHandler):
@@ -190,7 +188,10 @@ if __name__ == "__main__":
     #tornado.autoreload.add_reload_hook(shutdown)
     logger.debug('RESTful api server started at port {}'.format(port))
 
-    try:
-        IOLoop.instance().start()
-    except KeyboardInterrupt:
-        shutdown()
+    #try:
+    #    IOLoop.instance().start()
+    #except KeyboardInterrupt:
+    #    shutdown()
+    # Nothing to do for shutdown so... commenting out.
+
+    IOLoop.instance().start()
