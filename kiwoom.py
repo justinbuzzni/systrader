@@ -229,15 +229,17 @@ class Kiwoom(QAxWidget):
     def kiwoom_TR_OPT10080_주식분봉차트조회(self, strCode, tick=1, fix=1, size=240, nPrevNext=0, **kwargs):
         """주식분봉차트조회
         :param strCode: 종목코드
+        :param refDate: Reference date. In format of yyyyMMdd
         :param tick: 틱범위 (1:1분, 3:3분, 5:5분, 10:10분, 15:15분, 30:30분, 45:45분, 60:60분)
         :param fix: 수정주가구분 (0 or 1, 수신데이터 1:유상증자, 2:무상증자, 4:배당락, 8:액면분할, 16:액면병합, 32:기업합병, 64:감자, 256:권리락)
+        :param size: Fetch these many candle sticks.
         :param nPrevNext:
         :param kwargs:
         :return:
         """
         self.params['size'] = size
         res = self.kiwoom_SetInputValue("종목코드", strCode)
-        # res = self.kiwoom_SetInputValue("기준일자", 기준일자)
+        # res = self.kiwoom_SetInputValue("기준일자", refDate)  # Doesn't work.
         res = self.kiwoom_SetInputValue("틱범위", str(tick))
         res = self.kiwoom_SetInputValue("수정주가구분", str(fix))
         res = self.kiwoom_CommRqData("주식분봉차트조회", "opt10080", nPrevNext, 화면번호)
