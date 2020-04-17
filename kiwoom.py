@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import datetime
 import sys
 import os
 import time
-from collections import deque
 import threading
-from threading import Event
-from threading import Lock
+from threading import Event, Lock
 import logging
 from logging import FileHandler
 
@@ -28,16 +27,29 @@ import util
 매도수수료비율 = 0.00015 + 0.0025  # 매도시 현재가에 곱해서 사용
 화면번호 = "1234"
 
+# Timestamp for loggers
+formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
+                              datefmt='%Y-%m-%d %H:%M:%S')
 
 # 로그 파일 핸들러
+now = datetime.datetime.now().isoformat()[:10]
+logf = now + ".log"
+logf = os.path.join("logs", logf)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-fh_log = FileHandler(os.path.join(BASE_DIR, 'logs/debug.log'), encoding='utf-8')
+fh_log = FileHandler(os.path.join(BASE_DIR, logf), encoding='utf-8')
 fh_log.setLevel(logging.DEBUG)
+fh_log.setFormatter(formatter)
+
+# stdout handler
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setFormatter(formatter)
 
 # 로거 생성 및 핸들러 등록
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(fh_log)
+logger.addHandler(stdout_handler)
+
 
 
 class SyncRequestDecorator:
@@ -71,10 +83,12 @@ class Kiwoom(QAxWidget):
 
     # 초당 5회 제한이므로 최소한 0.2초 대기해야 함
     # (2018년 10월 기준) 1시간에 1000회 제한하므로 3.6초 이상 대기해야 함
-    연속요청대기초 = 4.0
+    #rate_limit = 4.0
+    rate_limit = 0.5 # But I won't be making too many requests so... Uhm... unused.
 
     def __init__(self):
-        """메인 객체
+        """
+        메인 객체
         """
         super().__init__()
 
@@ -86,11 +100,15 @@ class Kiwoom(QAxWidget):
         # self.OnReceiveConditionVer.connect(self.kiwoom_OnReceiveConditionVer)
         # self.OnReceiveTrCondition.connect(self.kiwoom_OnReceiveTrCondition)
         # self.OnReceiveRealCondition.connect(self.kiwoom_OnReceiveRealCondition)
-        # self.OnReceiveChejanData.connect(self.kiwoom_OnReceiveChejanData)
-        # self.OnReceiveMsg.connect(self.kiwoom_OnReceiveMsg)
+        self.OnReceiveChejanData.connect(self.kiwoom_OnReceiveChejanData)
+        self.OnReceiveMsg.connect(self.kiwoom_OnReceiveMsg)
 
         # 파라미터
         self.params = {}
+
+        # I dunno what these are but this is missing
+        self.dict_stock = {}
+        self.dict_callback = {}
 
         # 요청 결과
         self.event = None
@@ -117,6 +135,17 @@ class Kiwoom(QAxWidget):
         """
         lRet = self.dynamicCall("GetConnectState()")
         return lRet
+
+    def kiwoom_GetAccList(self):
+        """
+        Get account list
+        :return: accout list, in python list form.
+        """
+        raw = self.dynamicCall("GetLoginInfo(\"ACCLIST\")")
+        result = raw.split(";")
+        if result[-1] == '':
+            result.pop()
+        return result
 
     @SyncRequestDecorator.kiwoom_sync_callback
     def kiwoom_OnEventConnect(self, nErrCode, **kwargs):
@@ -200,15 +229,17 @@ class Kiwoom(QAxWidget):
     def kiwoom_TR_OPT10080_주식분봉차트조회(self, strCode, tick=1, fix=1, size=240, nPrevNext=0, **kwargs):
         """주식분봉차트조회
         :param strCode: 종목코드
+        :param refDate: Reference date. In format of yyyyMMdd
         :param tick: 틱범위 (1:1분, 3:3분, 5:5분, 10:10분, 15:15분, 30:30분, 45:45분, 60:60분)
         :param fix: 수정주가구분 (0 or 1, 수신데이터 1:유상증자, 2:무상증자, 4:배당락, 8:액면분할, 16:액면병합, 32:기업합병, 64:감자, 256:권리락)
+        :param size: Fetch these many candle sticks.
         :param nPrevNext:
         :param kwargs:
         :return:
         """
         self.params['size'] = size
         res = self.kiwoom_SetInputValue("종목코드", strCode)
-        # res = self.kiwoom_SetInputValue("기준일자", 기준일자)
+        # res = self.kiwoom_SetInputValue("기준일자", refDate)  # Doesn't work.
         res = self.kiwoom_SetInputValue("틱범위", str(tick))
         res = self.kiwoom_SetInputValue("수정주가구분", str(fix))
         res = self.kiwoom_CommRqData("주식분봉차트조회", "opt10080", nPrevNext, 화면번호)
@@ -259,7 +290,7 @@ class Kiwoom(QAxWidget):
 
     @SyncRequestDecorator.kiwoom_sync_request
     def kiwoom_TR_OPW00001_예수금상세현황요청(self, 계좌번호, **kwargs):
-        """계좌수익률요청
+        """예수금상세현황요청
         :param 계좌번호: 계좌번호
         :param kwargs:
         :return:
@@ -438,6 +469,8 @@ class Kiwoom(QAxWidget):
 
         elif sRQName == "계좌수익률요청":
             cnt = self.kiwoom_GetRepeatCnt(sTRCode, sRQName)
+            assert self.dict_holding is None # The request will set this to None.
+            result = {}
             for nIdx in range(cnt):
                 list_item_name = ["종목코드", "종목명", "현재가", "매입가", "보유수량"]
                 dict_holding = {item_name: self.kiwoom_GetCommData(sTRCode, sRQName, nIdx, item_name).strip() for
@@ -448,10 +481,17 @@ class Kiwoom(QAxWidget):
                 dict_holding["보유수량"] = util.safe_cast(dict_holding["보유수량"], int, 0)
                 dict_holding["수익"] = (dict_holding["현재가"] - dict_holding["총매입가"]) * dict_holding["보유수량"]
                 종목코드 = dict_holding["종목코드"]
-                self.dict_holding[종목코드] = dict_holding
+                result[종목코드] = dict_holding
                 logger.debug("계좌수익: %s" % (dict_holding,))
+            self.dict_holding = result
             if '계좌수익률요청' in self.dict_callback:
                 self.dict_callback['계좌수익률요청'](self.dict_holding)
+        elif sRQName.startswith("RQ_"):
+            logger.debug("RQ handler")
+            result = self.kiwoom_GetCommData(sTRCode, sRQName, 0, "")
+            logger.debug("result: {}".format(result))
+        else:
+            logger.debug("Unknown sRQName: {}".format(sRQName))
 
         if self.event is not None:
             self.event.exit()
@@ -600,6 +640,7 @@ class Kiwoom(QAxWidget):
     # 주문 관련함수
     # OnReceiveTRData(), OnReceiveMsg(), OnReceiveChejan()
     # -------------------------------------
+    @SyncRequestDecorator.kiwoom_sync_request
     def kiwoom_SendOrder(self, sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb, sOrgOrderNo,
                          **kwargs):
         """주문
@@ -634,6 +675,7 @@ class Kiwoom(QAxWidget):
         lRet = self.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
                                        [sRQName, sScreenNo, sAccNo, nOrderType, sCode, nQty, nPrice, sHogaGb,
                                         sOrgOrderNo])
+        logger.debug("kiwoom_SendOrder.lRet: {}".format(lRet))
 
     def kiwoom_OnReceiveMsg(self, sScrNo, sRQName, sTrCode, sMsg, **kwargs):
         """주문성공, 실패 메시지
@@ -726,8 +768,8 @@ class Kiwoom(QAxWidget):
                 dict_contract["종목코드"] = 종목코드
 
             # 종목을 대기 리스트에서 제거
-            if 종목코드 in self.set_stock_ordered:
-                self.set_stock_ordered.remove(종목코드)
+            #if 종목코드 in self.set_stock_ordered:
+            #    self.set_stock_ordered.remove(종목코드)
 
             # 매수 체결일 경우 보유종목에 빈 dict 추가 (키만 추가하기 위해)
             if "매수" in dict_contract["주문구분"]:
@@ -791,6 +833,7 @@ if __name__ == '__main__':
         res = hts.kiwoom_CommConnect()
         logger.debug('로그인 결과: {}'.format(res))
         if res.get('result') != 0:
+            print("Login failed")
             sys.exit()
 
     # something
