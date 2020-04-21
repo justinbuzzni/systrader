@@ -1,12 +1,8 @@
 import os
-import sys
-import argparse
 import time
 
-# import pythoncom
 import win32com.client
 from pywinauto import application
-from pywinauto import timings
 
 import constants
 import util
@@ -32,14 +28,6 @@ class Creon:
         # 계좌별 매수 가능금액/수량
         # https://money2.creontrade.com/e5/mboard/ptype_basic/HTS_Plus_Helper/DW_Basic_Read_Page.aspx?boardseq=284&seq=171&page=3&searchString=%EA%B3%84%EC%A2%8C&p=8841&v=8643&m=9505
         self.obj_CpTrade_CpTdNew5331A = win32com.client.Dispatch('CpTrade.CpTdNew5331A')
-
-    def kill_client(self):
-        os.system('taskkill /IM coStarter* /F /T')
-        os.system('taskkill /IM CpStart* /F /T')
-        os.system('taskkill /IM DibServer* /F /T')
-        os.system('wmic process where "name like \'%coStarter%\'" call terminate')
-        os.system('wmic process where "name like \'%CpStart%\'" call terminate')
-        os.system('wmic process where "name like \'%DibServer%\'" call terminate')
 
     def connect(self, id_, pwd, pwdcert, trycnt=300):
         if not self.connected():
@@ -72,11 +60,19 @@ class Creon:
             return True
         return False
 
+    def kill_client(self):
+        os.system('taskkill /IM coStarter* /F /T')
+        os.system('taskkill /IM CpStart* /F /T')
+        os.system('taskkill /IM DibServer* /F /T')
+        os.system('wmic process where "name like \'%coStarter%\'" call terminate')
+        os.system('wmic process where "name like \'%CpStart%\'" call terminate')
+        os.system('wmic process where "name like \'%DibServer%\'" call terminate')
+
     def avoid_reqlimitwarning(self):
-        remainTime = self.obj_CpUtil_CpCybos.LimitRequestRemainTime
-        remainCount = self.obj_CpUtil_CpCybos.GetLimitRemainCount(1)  # 시세 제한
-        if remainCount <= 3:
-            time.sleep(remainTime / 1000)
+        remain_time = self.obj_CpUtil_CpCybos.LimitRequestRemainTime
+        remain_count = self.obj_CpUtil_CpCybos.GetLimitRemainCount(1)
+        if remain_count <= 3:
+            time.sleep(remain_time / 1000)
 
     def get_stockcodes(self, code):
         """
@@ -91,12 +87,11 @@ class Creon:
             [helpstring("KONEX")] CPC_MARKET_KONEX= 5,
             }CPE_MARKET_KIND; 
         """
-        if code == constants.MARKET_CODE_KOSPI:
-            code = 1
-        elif code == constants.MARKET_CODE_KOSDAQ:
-            code = 2
-        res = self.obj_CpUtil_CpCodeMgr.GetStockListByMarket(code)
-        return res
+        if code in [constants.MARKET_CODE_KOSPI, constants.MARKET_CODE_KOSDAQ]:
+            res = self.obj_CpUtil_CpCodeMgr.GetStockListByMarket(code)
+            return res
+        else:
+            return None
 
     def get_stockstatus(self, code):
         """
@@ -169,7 +164,7 @@ class Creon:
         _fields = [67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 116, 118, 120, 123, 124, 125, 127, 156]
         _keys = ['PER', '시간외매수잔량', '시간외매도잔량', 'EPS', '자본금', '액면가', '배당률', '배당수익률', '부채비율', '유보율', '자기자본이익률', '매출액증가율', '경상이익증가율', '순이익증가율', '투자심리', 'VR', '5일회전율', '4일종가합', '9일종가합', '매출액', '경상이익', '당기순이익', 'BPS', '영업이익증가율', '영업이익', '매출액영업이익률', '매출액경상이익률', '이자보상비율', '분기BPS', '분기매출액증가율', '분기영업이액증가율', '분기경상이익증가율', '분기순이익증가율', '분기매출액', '분기영업이익', '분기경상이익', '분기당기순이익', '분개매출액영업이익률', '분기매출액경상이익률', '분기ROE', '분기이자보상비율', '분기유보율', '분기부채비율', '프로그램순매수', '당일외국인순매수', '당일기관순매수', 'SPS', 'CFPS', 'EBITDA', '공매도수량', '당일개인순매수']
         self.obj_CpSysDib_MarketEye.SetInputValue(0, _fields)
-        self.obj_CpSysDib_MarketEye.SetInputValue(1, 'A'+code)
+        self.obj_CpSysDib_MarketEye.SetInputValue(1, code)
         self.obj_CpSysDib_MarketEye.BlockRequest()
 
         cnt_field = self.obj_CpSysDib_MarketEye.GetHeaderValue(0)

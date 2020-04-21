@@ -1,86 +1,70 @@
-from flask import Flask, escape, request, jsonify
+import json
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from creon import Creon
+import constants
 
 
-app = Flask(__name__)
 c = Creon()
 
 
-@app.route('/connection', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def handle_connect():
-    c = Creon()
+@csrf_exempt 
+def handle_connection(request):
     if request.method == 'GET':
         # check connection status
-        return jsonify(c.connected())
+        return JsonResponse(c.connected(), safe=False)
     elif request.method == 'POST':
         # make connection
-        data = request.get_json()
+        data = json.loads(request.body)
         _id = data['id']
         _pwd = data['pwd']
         _pwdcert = data['pwdcert']
-        return jsonify(c.connect(_id, _pwd, _pwdcert))
-    elif request.method == 'PUT':
-        # reconnect
-        c.disconnect()
-        c.kill_client()
-        data = request.get_json()
-        _id = data['id']
-        _pwd = data['pwd']
-        _pwdcert = data['pwdcert']
-        return jsonify(c.connect(_id, _pwd, _pwdcert))
+        return JsonResponse(c.connect(_id, _pwd, _pwdcert), safe=False)
     elif request.method == 'DELETE':
         # disconnect
         res = c.disconnect()
         c.kill_client()
-        return jsonify(res)
+        return JsonResponse(res, safe=False)
 
 
-@app.route('/stockcodes', methods=['GET'])
-def handle_stockcodes():
-    c = Creon()
+def handle_stockcodes(request):
     c.avoid_reqlimitwarning()
-    market = request.args.get('market')
+    market = request.GET.get('market')
     if market == 'kospi':
-        return c.get_stockcodes(1)
+        return JsonResponse(c.get_stockcodes(constants.MARKET_CODE_KOSPI), safe=False)
     elif market == 'kosdaq':
-        return c.get_stockcodes(2)
+        return JsonResponse(c.get_stockcodes(constants.MARKET_CODE_KOSDAQ), safe=False)
     else:
-        return '', 400
+        return HttpResponse('"market" should be one of "kospi" and "kosdaq".', status_code=400)
 
 
-@app.route('/stockstatus', methods=['GET'])
-def handle_stockstatus():
-    c = Creon()
+def handle_stockstatus(request):
     c.avoid_reqlimitwarning()
-    stockcode = request.args.get('code')
+    stockcode = request.GET.get('code')
     if not stockcode:
-        return '', 400
+        return HttpResponse('"code" should be provided.', status_code=400)
     status = c.get_stockstatus(stockcode)
-    return jsonify(status)
+    return JsonResponse(status)
 
 
-@app.route('/stockcandles', methods=['GET'])
-def handle_stockcandles():
-    c = Creon()
+def handle_stockcandles(request):
     c.avoid_reqlimitwarning()
-    stockcode = request.args.get('code')
-    n = request.args.get('n')
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    stockcode = request.GET.get('code')
+    n = request.GET.get('n')
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
     if not (n or date_from):
-        return '', 400
+        return HttpResponse('Need to provide "n" or "date_from" argument.', status_code=400)
     stockcandles = c.get_chart(stockcode, target='A', unit='D', n=n, date_from=date_from, date_to=date_to)
-    return jsonify(stockcandles)
+    return JsonResponse(stockcandles, safe=False)
 
 
-@app.route('/marketcandles', methods=['GET'])
-def handle_marketcandles():
-    c = Creon()
+def handle_marketcandles(request):
     c.avoid_reqlimitwarning()
-    marketcode = request.args.get('code')
-    n = request.args.get('n')
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    marketcode = request.GET.get('code')
+    n = request.GET.get('n')
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
     if marketcode == 'kospi':
         marketcode = '001'
     elif marketcode == 'kosdaq':
@@ -88,35 +72,27 @@ def handle_marketcandles():
     elif marketcode == 'kospi200':
         marketcode = '180'
     else:
-        return [], 400
+        return HttpResponse('"code" should be one of "kospi", "kosdaq", and "kospi200".', status_code=400)
     if not (n or date_from):
-        return '', 400
+        return HttpResponse('Need to provide "n" or "date_from" argument.', status_code=400)
     marketcandles = c.get_chart(marketcode, target='U', unit='D', n=n, date_from=date_from, date_to=date_to)
-    return jsonify(marketcandles)
+    return JsonResponse(marketcandles, safe=False)
 
 
-@app.route('/stockfeatures', methods=['GET'])
-def handle_stockfeatures():
-    c = Creon()
+def handle_stockfeatures(request):
     c.avoid_reqlimitwarning()
-    stockcode = request.args.get('code')
+    stockcode = request.GET.get('code')
     if not stockcode:
-        return '', 400
+        return HttpResponse('"code" should be provided.', status_code=400)
     stockfeatures = c.get_stockfeatures(stockcode)
-    return jsonify(stockfeatures)
+    return JsonResponse(stockfeatures)
 
 
-@app.route('/short', methods=['GET'])
-def handle_short():
-    c = Creon()
+def handle_short(request):
     c.avoid_reqlimitwarning()
     stockcode = request.args.get('code')
     n = request.args.get('n')
     if not stockcode:
-        return '', 400
-    stockfeatures = c.get_shortstockselling(stockcode, n=n)
-    return jsonify(stockfeatures)
-
-
-if __name__ == "__main__":
-    app.run()
+        return HttpResponse('"code" should be provided.', status_code=400)
+    shorts = c.get_shortstockselling(stockcode, n=n)
+    return JsonResponse(shorts)
