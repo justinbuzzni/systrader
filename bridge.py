@@ -95,4 +95,4 @@ def handle_short(request):
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
     shorts = c.get_shortstockselling(stockcode, n=n)
-    return JsonResponse(shorts)
+    return JsonResponse(shorts, safe=False)
