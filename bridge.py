@@ -90,8 +90,8 @@ def handle_stockfeatures(request):
 
 def handle_short(request):
     c.avoid_reqlimitwarning()
-    stockcode = request.args.get('code')
-    n = request.args.get('n')
+    stockcode = request.GET.get('code')
+    n = request.GET.get('n')
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
     shorts = c.get_shortstockselling(stockcode, n=n)
