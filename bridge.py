@@ -51,6 +51,8 @@ def handle_stockcandles(request):
     c.avoid_reqlimitwarning()
     stockcode = request.GET.get('code')
     n = request.GET.get('n')
+    if n:
+        n = int(n)
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
     if not (n or date_from):
@@ -63,6 +65,8 @@ def handle_marketcandles(request):
     c.avoid_reqlimitwarning()
     marketcode = request.GET.get('code')
     n = request.GET.get('n')
+    if n:
+        n = int(n)
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
     if marketcode == 'kospi':
@@ -92,6 +96,8 @@ def handle_short(request):
     c.avoid_reqlimitwarning()
     stockcode = request.GET.get('code')
     n = request.GET.get('n')
+    if n:
+        n = int(n)
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
     shorts = c.get_shortstockselling(stockcode, n=n)
