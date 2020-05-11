@@ -28,7 +28,7 @@ def handle_connect():
 
 @app.route('/stockcodes', methods=['GET'])
 def handle_stockcodes():
-    c.avoid_reqlimitwarning()
+    c.wait()
     market = request.args.get('market')
     if market == 'kospi':
         return jsonify(c.get_stockcodes(constants.MARKET_CODE_KOSPI))
@@ -40,7 +40,7 @@ def handle_stockcodes():
 
 @app.route('/stockstatus', methods=['GET'])
 def handle_stockstatus():
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.args.get('code')
     if not stockcode:
         return '', 400
@@ -50,7 +50,7 @@ def handle_stockstatus():
 
 @app.route('/stockcandles', methods=['GET'])
 def handle_stockcandles():
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.args.get('code')
     n = request.args.get('n')
     date_from = request.args.get('date_from')
@@ -63,7 +63,7 @@ def handle_stockcandles():
 
 @app.route('/marketcandles', methods=['GET'])
 def handle_marketcandles():
-    c.avoid_reqlimitwarning()
+    c.wait()
     marketcode = request.args.get('code')
     n = request.args.get('n')
     date_from = request.args.get('date_from')
@@ -84,7 +84,7 @@ def handle_marketcandles():
 
 @app.route('/stockfeatures', methods=['GET'])
 def handle_stockfeatures():
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.args.get('code')
     if not stockcode:
         return '', 400
@@ -94,7 +94,7 @@ def handle_stockfeatures():
 
 @app.route('/short', methods=['GET'])
 def handle_short():
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.args.get('code')
     n = request.args.get('n')
     if not stockcode:

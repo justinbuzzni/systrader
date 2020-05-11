@@ -3,6 +3,7 @@ import time
 
 import win32com.client
 from pywinauto import application
+import psutil
 
 import constants
 import util
@@ -15,7 +16,6 @@ class Creon:
         self.obj_CpSysDib_StockChart = win32com.client.Dispatch('CpSysDib.StockChart')
         self.obj_CpTrade_CpTdUtil = win32com.client.Dispatch('CpTrade.CpTdUtil')
         self.obj_CpSysDib_MarketEye = win32com.client.Dispatch('CpSysDib.MarketEye')
-        self.obj_CpUtil_CpCybos = win32com.client.Dispatch('CpUtil.CpCybos')
 
         # 종목별 공매도 추이
         # https://money2.creontrade.com/e5/mboard/ptype_basic/HTS_Plus_Helper/DW_Basic_Read_Page.aspx?boardseq=284&seq=227&page=1&searchString=CpSysDib.CpSvr7238&p=8841&v=8643&m=9505
@@ -32,7 +32,6 @@ class Creon:
     def connect(self, id_, pwd, pwdcert, trycnt=300):
         if not self.connected():
             self.disconnect()
-            self.kill_client()
             app = application.Application()
             app.start(
                 'C:\\CREON\\STARTER\\coStarter.exe /prj:cp /id:{id} /pwd:{pwd} /pwdcert:{pwdcert} /autostart'.format(
@@ -46,29 +45,26 @@ class Creon:
                 return False
             time.sleep(1)
             cnt += 1
+        
         return True
 
     def connected(self):
-        b_connected = self.obj_CpUtil_CpCybos.IsConnect
-        if b_connected == 0:
-            return False
-        return True
-
-    def disconnect(self):
-        if self.connected():
-            self.obj_CpUtil_CpCybos.PlusDisconnect()
-            return True
+        plist = [p.name() for p in psutil.process_iter()]
+        if "DibServer.exe" in plist and "CpStart.exe" in plist:
+            return self.obj_CpUtil_CpCybos.IsConnect != 0
         return False
 
-    def kill_client(self):
+    def disconnect(self):
         os.system('taskkill /IM coStarter* /F /T')
         os.system('taskkill /IM CpStart* /F /T')
         os.system('taskkill /IM DibServer* /F /T')
         os.system('wmic process where "name like \'%coStarter%\'" call terminate')
         os.system('wmic process where "name like \'%CpStart%\'" call terminate')
         os.system('wmic process where "name like \'%DibServer%\'" call terminate')
+        self.obj_CpUtil_CpCybos.PlusDisconnect()
+        return True
 
-    def avoid_reqlimitwarning(self):
+    def wait(self):
         remain_time = self.obj_CpUtil_CpCybos.LimitRequestRemainTime
         remain_count = self.obj_CpUtil_CpCybos.GetLimitRemainCount(1)
         if remain_count <= 3:
@@ -236,7 +232,7 @@ class Creon:
         # 연속조회 처리
         result = req([])
         while self.obj_CpSysDib_StockChart.Continue:
-            self.avoid_reqlimitwarning()
+            self.wait()
             _list_item = req(result)
             if len(_list_item) > 0:
                 result = _list_item + result
@@ -275,7 +271,7 @@ class Creon:
         # 연속조회 처리
         result = req([])
         while self.obj_CpSysDib_CpSvr7238.Continue:
-            self.avoid_reqlimitwarning()
+            self.wait()
             _list_item = req(result)
             if len(_list_item) > 0:
                 result = _list_item + result

@@ -22,13 +22,11 @@ def handle_connection(request):
         return JsonResponse(c.connect(_id, _pwd, _pwdcert), safe=False)
     elif request.method == 'DELETE':
         # disconnect
-        res = c.disconnect()
-        c.kill_client()
-        return JsonResponse(res, safe=False)
+        return JsonResponse(c.disconnect(), safe=False)
 
 
 def handle_stockcodes(request):
-    c.avoid_reqlimitwarning()
+    c.wait()
     market = request.GET.get('market')
     if market == 'kospi':
         return JsonResponse(c.get_stockcodes(constants.MARKET_CODE_KOSPI), safe=False)
@@ -39,7 +37,7 @@ def handle_stockcodes(request):
 
 
 def handle_stockstatus(request):
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.GET.get('code')
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
@@ -48,7 +46,7 @@ def handle_stockstatus(request):
 
 
 def handle_stockcandles(request):
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.GET.get('code')
     n = request.GET.get('n')
     if n:
@@ -62,7 +60,7 @@ def handle_stockcandles(request):
 
 
 def handle_marketcandles(request):
-    c.avoid_reqlimitwarning()
+    c.wait()
     marketcode = request.GET.get('code')
     n = request.GET.get('n')
     if n:
@@ -84,7 +82,7 @@ def handle_marketcandles(request):
 
 
 def handle_stockfeatures(request):
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.GET.get('code')
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
@@ -93,7 +91,7 @@ def handle_stockfeatures(request):
 
 
 def handle_short(request):
-    c.avoid_reqlimitwarning()
+    c.wait()
     stockcode = request.GET.get('code')
     n = request.GET.get('n')
     if n:
