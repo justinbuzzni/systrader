@@ -8,8 +8,13 @@
 - KOA Studio 실행
 
 # 크레온 환경 설치
-- `conda install -c anaconda pywin32`
-- `pip install pywinauto`
+```
+conda install -c anaconda python=3.8.2
+conda install -c anaconda pywin32
+pip install django
+pip install pywinauto
+```
+pywinauto가 3.7.6, 3.8.1 등의 버전에서는 동작하지 않으므로 3.7.4, 3.8.0, 3.8.2 등 사용
 
 # 문서
 * http://blog.quantylab.com/systrading.html

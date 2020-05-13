@@ -21,9 +21,7 @@ def handle_connect():
         return jsonify(c.connect(_id, _pwd, _pwdcert))
     elif request.method == 'DELETE':
         # disconnect
-        res = c.disconnect()
-        c.kill_client()
-        return jsonify(res)
+        return jsonify(c.disconnect())
 
 
 @app.route('/stockcodes', methods=['GET'])
@@ -53,6 +51,8 @@ def handle_stockcandles():
     c.wait()
     stockcode = request.args.get('code')
     n = request.args.get('n')
+    if n:
+        n = int(n)
     date_from = request.args.get('date_from')
     date_to = request.args.get('date_to')
     if not (n or date_from):
@@ -66,6 +66,8 @@ def handle_marketcandles():
     c.wait()
     marketcode = request.args.get('code')
     n = request.args.get('n')
+    if n:
+        n = int(n)
     date_from = request.args.get('date_from')
     date_to = request.args.get('date_to')
     if marketcode == 'kospi':
@@ -97,6 +99,8 @@ def handle_short():
     c.wait()
     stockcode = request.args.get('code')
     n = request.args.get('n')
+    if n:
+        n = int(n)
     if not stockcode:
         return '', 400
     shorts = c.get_shortstockselling(stockcode, n=n)
@@ -104,4 +108,4 @@ def handle_short():
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host='0.0.0.0', port=5000)
