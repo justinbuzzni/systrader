@@ -25,5 +25,6 @@ urlpatterns = [
     path('stockcandles', bridge.handle_stockcandles),
     path('marketcandles', bridge.handle_marketcandles),
     path('stockfeatures', bridge.handle_stockfeatures),
-    path('short', bridge.handle_short),
+    path('short', bridge.handle_short), 
+    path('investorbuysell', bridge.handle_investorbuysell), 
 ]

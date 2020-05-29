@@ -1,9 +1,9 @@
 import os
 import time
+import subprocess
 
 import win32com.client
 from pywinauto import application
-import psutil
 
 import constants
 import util
@@ -11,25 +11,28 @@ import util
 
 class Creon:
     def __init__(self):
+        self._dispatch_conn()
         self.obj_CpUtil_CpCodeMgr = win32com.client.Dispatch('CpUtil.CpCodeMgr')
-        self.obj_CpUtil_CpCybos = win32com.client.Dispatch('CpUtil.CpCybos')
         self.obj_CpSysDib_StockChart = win32com.client.Dispatch('CpSysDib.StockChart')
         self.obj_CpTrade_CpTdUtil = win32com.client.Dispatch('CpTrade.CpTdUtil')
         self.obj_CpSysDib_MarketEye = win32com.client.Dispatch('CpSysDib.MarketEye')
-
-        # 종목별 공매도 추이
-        # https://money2.creontrade.com/e5/mboard/ptype_basic/HTS_Plus_Helper/DW_Basic_Read_Page.aspx?boardseq=284&seq=227&page=1&searchString=CpSysDib.CpSvr7238&p=8841&v=8643&m=9505
         self.obj_CpSysDib_CpSvr7238 = win32com.client.Dispatch('CpSysDib.CpSvr7238')
-        
-        # 계좌별 매도 가능수량
-        # https://money2.creontrade.com/e5/mboard/ptype_basic/HTS_Plus_Helper/DW_Basic_Read_Page.aspx?boardseq=284&seq=172&page=1&searchString=CpTrade.CpTdNew5331B&p=8841&v=8643&m=9505
         self.obj_CpTrade_CpTdNew5331B = win32com.client.Dispatch('CpTrade.CpTdNew5331B')
-
-        # 계좌별 매수 가능금액/수량
-        # https://money2.creontrade.com/e5/mboard/ptype_basic/HTS_Plus_Helper/DW_Basic_Read_Page.aspx?boardseq=284&seq=171&page=3&searchString=%EA%B3%84%EC%A2%8C&p=8841&v=8643&m=9505
         self.obj_CpTrade_CpTdNew5331A = win32com.client.Dispatch('CpTrade.CpTdNew5331A')
+        self.obj_CpSysDib_CpSvr7254 = win32com.client.Dispatch('CpSysDib.CpSvr7254')
+
+    def _dispatch_conn(self):
+        self.obj_CpUtil_CpCybos = win32com.client.Dispatch('CpUtil.CpCybos')
+
+    def _redispatch_conn(self):
+        try:
+            del self.obj_CpUtil_CpCybos
+        except Exception as e:
+            pass
+        self._dispatch_conn()
 
     def connect(self, id_, pwd, pwdcert, trycnt=300):
+        self._redispatch_conn()
         if not self.connected():
             self.disconnect()
             app = application.Application()
@@ -45,23 +48,22 @@ class Creon:
                 return False
             time.sleep(1)
             cnt += 1
-        
         return True
 
     def connected(self):
-        plist = [p.name() for p in psutil.process_iter()]
-        if "DibServer.exe" in plist and "CpStart.exe" in plist:
+        tasklist = subprocess.check_output('TASKLIST')
+        if b"DibServer.exe" in tasklist and b"CpStart.exe" in tasklist:
+            print(self.obj_CpUtil_CpCybos.IsConnect)
             return self.obj_CpUtil_CpCybos.IsConnect != 0
         return False
 
     def disconnect(self):
-        os.system('taskkill /IM coStarter* /F /T')
-        os.system('taskkill /IM CpStart* /F /T')
-        os.system('taskkill /IM DibServer* /F /T')
-        os.system('wmic process where "name like \'%coStarter%\'" call terminate')
+        # os.system('taskkill /IM coStarter* /F /T')
+        # os.system('taskkill /IM CpStart* /F /T')
+        # os.system('taskkill /IM DibServer* /F /T')
+        # os.system('wmic process where "name like \'%coStarter%\'" call terminate')
         os.system('wmic process where "name like \'%CpStart%\'" call terminate')
         os.system('wmic process where "name like \'%DibServer%\'" call terminate')
-        self.obj_CpUtil_CpCybos.PlusDisconnect()
         return True
 
     def wait(self):
@@ -204,7 +206,7 @@ class Creon:
         self.obj_CpSysDib_StockChart.SetInputValue(6, ord(unit))
         self.obj_CpSysDib_StockChart.SetInputValue(9, ord('1')) # 0: 무수정주가, 1: 수정주가
 
-        def req(prev_result):
+        def req():
             self.obj_CpSysDib_StockChart.BlockRequest()
 
             status = self.obj_CpSysDib_StockChart.GetDibStatus()
@@ -230,10 +232,10 @@ class Creon:
             return list_item
 
         # 연속조회 처리
-        result = req([])
+        result = req()
         while self.obj_CpSysDib_StockChart.Continue:
             self.wait()
-            _list_item = req(result)
+            _list_item = req()
             if len(_list_item) > 0:
                 result = _list_item + result
                 if n is not None and n <= len(result):
@@ -246,14 +248,11 @@ class Creon:
         """
         종목별공매도추이
         """
-        if not self.connected():
-            return None
-        _fields = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
         _keys = ['date', 'close', 'diff', 'diffratio', 'volume', 'short_volume', 'short_ratio', 'short_amount', 'avg_price', 'avg_price_ratio']
 
         self.obj_CpSysDib_CpSvr7238.SetInputValue(0, 'A'+code) 
         
-        def req(prev_result):
+        def req():
             self.obj_CpSysDib_CpSvr7238.BlockRequest()
 
             status = self.obj_CpSysDib_CpSvr7238.GetDibStatus()
@@ -265,14 +264,15 @@ class Creon:
             list_item = []
             for i in range(cnt):
                 dict_item = {k: self.obj_CpSysDib_CpSvr7238.GetDataValue(j, cnt-1-i) for j, k in enumerate(_keys)}
+                dict_item['code'] = code
                 list_item.append(dict_item)
             return list_item
 
         # 연속조회 처리
-        result = req([])
+        result = req()
         while self.obj_CpSysDib_CpSvr7238.Continue:
             self.wait()
-            _list_item = req(result)
+            _list_item = req()
             if len(_list_item) > 0:
                 result = _list_item + result
                 if n is not None and n <= len(result):
@@ -313,3 +313,52 @@ class Creon:
             }
             res.append(item)
         return res
+
+    def get_investorbuysell(self, code, n=None):
+        """
+        투자자별 매매동향
+        """
+        _keys = ['date', 'ind', 'foreign', 'inst', 'fin', 'ins', 'trust', 'bank', 'fin_etc', 'fund', 'corp', 'foreign_etc', 'private_fund', 'country', 'close', 'diff', 'diffratio', 'volume', 'confirm']
+        char_keys = ['confirm']
+
+        self.obj_CpSysDib_CpSvr7254.SetInputValue(0, 'A' + code)
+        self.obj_CpSysDib_CpSvr7254.SetInputValue(1, ord('6'))
+        self.obj_CpSysDib_CpSvr7254.SetInputValue(4, ord('0'))
+        self.obj_CpSysDib_CpSvr7254.SetInputValue(5, 0)
+        self.obj_CpSysDib_CpSvr7254.SetInputValue(6, ord('1'))  # '1': 순매수량, '2': 추정금액(백만원)
+        
+        def req():
+            self.obj_CpSysDib_CpSvr7254.BlockRequest()
+
+            status = self.obj_CpSysDib_CpSvr7254.GetDibStatus()
+            msg = self.obj_CpSysDib_CpSvr7254.GetDibMsg1()
+            if status != 0:
+                return None
+
+            cnt = self.obj_CpSysDib_CpSvr7254.GetHeaderValue(1)
+            list_item = []
+            for i in range(cnt):
+                dict_item = {}
+                for j, k in enumerate(_keys):
+                    dict_item[k] = self.obj_CpSysDib_CpSvr7254.GetDataValue(j, cnt-1-i)
+                    if k in char_keys:
+                        dict_item[k] = chr(dict_item[k])
+                dict_item['code'] = code
+                list_item.append(dict_item)
+            return list_item
+
+        # 연속조회 처리
+        result = []
+        while True:
+            self.wait()
+            _current_result = req()
+            result = _current_result + result
+            if len(_current_result) > 0:
+                result = _current_result + result
+                if n is not None and n <= len(result):
+                    break
+            else:
+                break
+            if not self.obj_CpSysDib_CpSvr7254.Continue:
+                break
+        return result

@@ -41,8 +41,8 @@ def handle_stockstatus(request):
     stockcode = request.GET.get('code')
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
-    status = c.get_stockstatus(stockcode)
-    return JsonResponse(status)
+    res = c.get_stockstatus(stockcode)
+    return JsonResponse(res)
 
 
 def handle_stockcandles(request):
@@ -55,8 +55,8 @@ def handle_stockcandles(request):
     date_to = request.GET.get('date_to')
     if not (n or date_from):
         return HttpResponse('Need to provide "n" or "date_from" argument.', status_code=400)
-    stockcandles = c.get_chart(stockcode, target='A', unit='D', n=n, date_from=date_from, date_to=date_to)
-    return JsonResponse(stockcandles, safe=False)
+    res = c.get_chart(stockcode, target='A', unit='D', n=n, date_from=date_from, date_to=date_to)
+    return JsonResponse(res, safe=False)
 
 
 def handle_marketcandles(request):
@@ -77,8 +77,8 @@ def handle_marketcandles(request):
         return HttpResponse('"code" should be one of "kospi", "kosdaq", and "kospi200".', status_code=400)
     if not (n or date_from):
         return HttpResponse('Need to provide "n" or "date_from" argument.', status_code=400)
-    marketcandles = c.get_chart(marketcode, target='U', unit='D', n=n, date_from=date_from, date_to=date_to)
-    return JsonResponse(marketcandles, safe=False)
+    res = c.get_chart(marketcode, target='U', unit='D', n=n, date_from=date_from, date_to=date_to)
+    return JsonResponse(res, safe=False)
 
 
 def handle_stockfeatures(request):
@@ -86,8 +86,8 @@ def handle_stockfeatures(request):
     stockcode = request.GET.get('code')
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
-    stockfeatures = c.get_stockfeatures(stockcode)
-    return JsonResponse(stockfeatures)
+    res = c.get_stockfeatures(stockcode)
+    return JsonResponse(res)
 
 
 def handle_short(request):
@@ -98,5 +98,17 @@ def handle_short(request):
         n = int(n)
     if not stockcode:
         return HttpResponse('"code" should be provided.', status_code=400)
-    shorts = c.get_shortstockselling(stockcode, n=n)
-    return JsonResponse(shorts, safe=False)
+    res = c.get_shortstockselling(stockcode, n=n)
+    return JsonResponse(res, safe=False)
+
+
+def handle_investorbuysell(request):
+    c.wait()
+    stockcode = request.GET.get('code')
+    n = request.GET.get('n')
+    if n:
+        n = int(n)
+    if not stockcode:
+        return HttpResponse('"code" should be provided.', status_code=400)
+    res = c.get_investorbuysell(stockcode, n=n)
+    return JsonResponse(res, safe=False)

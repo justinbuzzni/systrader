@@ -107,5 +107,18 @@ def handle_short():
     return jsonify(shorts)
 
 
+@app.route('/investorbuysell', methods=['GET'])
+def handle_investorbuysell():
+    c.wait()
+    stockcode = request.args.get('code')
+    n = request.args.get('n')
+    if n:
+        n = int(n)
+    if not stockcode:
+        return '', 400
+    investorbuysell = c.get_investorbuysell(stockcode, n=n)
+    return jsonify(investorbuysell)
+
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
