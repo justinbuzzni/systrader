@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
-from creon import Creon
-import constants
+from quantylab.systrader.creon.control import Creon
+from quantylab.systrader.creon import constants
 
 
 app = Flask(__name__)

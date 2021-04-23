@@ -15,16 +15,16 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-import bridge
+from quantylab.systrader.creon import bridge_django
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('connection', bridge.handle_connection),
-    path('stockcodes', bridge.handle_stockcodes),
-    path('stockstatus', bridge.handle_stockstatus),
-    path('stockcandles', bridge.handle_stockcandles),
-    path('marketcandles', bridge.handle_marketcandles),
-    path('stockfeatures', bridge.handle_stockfeatures),
-    path('short', bridge.handle_short), 
-    path('investorbuysell', bridge.handle_investorbuysell), 
+    path('connection', bridge_django.handle_connection),
+    path('stockcodes', bridge_django.handle_stockcodes),
+    path('stockstatus', bridge_django.handle_stockstatus),
+    path('stockcandles', bridge_django.handle_stockcandles),
+    path('marketcandles', bridge_django.handle_marketcandles),
+    path('stockfeatures', bridge_django.handle_stockfeatures),
+    path('short', bridge_django.handle_short), 
+    path('investorbuysell', bridge_django.handle_investorbuysell), 
 ]
