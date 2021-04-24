@@ -4,14 +4,14 @@
 
 # Setup
 
-# 키움증권 환경 설치
+## 키움증권 환경 설치
 
 - Kiwoom Open API 설치
 - MS Visual C++ 2010 x86 설치 (mfc100.dll 에러 해결)
 - MS Visual C++ 2012 x86 설치
 - KOA Studio 실행
 
-# 크레온 환경 설치
+## 크레온 환경 설치
 
 ```
 conda install -c anaconda python=3.8.2
