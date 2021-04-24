@@ -1,7 +1,7 @@
 import json
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from quantylab.systrader.creon.control import Creon
+from quantylab.systrader.creon import Creon
 from quantylab.systrader.creon import constants
 
 
