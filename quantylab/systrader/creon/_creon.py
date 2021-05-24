@@ -296,7 +296,7 @@ class Creon:
         _keys = ['date', 'ind', 'foreign', 'inst', 'fin', 'ins', 'trust', 'bank', 'fin_etc', 'fund', 'corp', 'foreign_etc', 'private_fund', 'country', 'close', 'diff', 'diffratio', 'volume', 'confirm']
 
         self.obj_CpSysDib_CpSvr7254.SetInputValue(0, 'A' + code)
-        self.obj_CpSysDib_CpSvr7254.SetInputValue(1, ord('6'))
+        self.obj_CpSysDib_CpSvr7254.SetInputValue(1, 6)
         self.obj_CpSysDib_CpSvr7254.SetInputValue(4, ord('0'))
         self.obj_CpSysDib_CpSvr7254.SetInputValue(5, 0)
         self.obj_CpSysDib_CpSvr7254.SetInputValue(6, ord('1'))  # '1': 순매수량, '2': 추정금액(백만원)

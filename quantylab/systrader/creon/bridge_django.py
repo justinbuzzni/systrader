@@ -112,3 +112,11 @@ def handle_investorbuysell(request):
         return HttpResponse('"code" should be provided.', status_code=400)
     res = c.get_investorbuysell(stockcode, n=n)
     return JsonResponse(res, safe=False)
+
+
+def handle_marketcap(request):
+    c.wait()
+    res = []
+    res += c.get_marketcap(target='2')  # 코스피
+    res += c.get_marketcap(target='4')  # 코스닥
+    return JsonResponse(res, safe=False)

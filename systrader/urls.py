@@ -27,4 +27,5 @@ urlpatterns = [
     path('stockfeatures', bridge_django.handle_stockfeatures),
     path('short', bridge_django.handle_short), 
     path('investorbuysell', bridge_django.handle_investorbuysell), 
+    path('marketcap', bridge_django.handle_marketcap), 
 ]
