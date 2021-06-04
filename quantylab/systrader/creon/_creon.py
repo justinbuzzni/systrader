@@ -236,6 +236,7 @@ class Creon:
         self.obj_CpSysDib_StockChart.SetInputValue(9, ord('1')) # 0: 무수정주가, 1: 수정주가
 
         result = self.request(self.obj_CpSysDib_StockChart, dict(zip(range(len(_keys)), _keys)), cntidx=3, n=n)
+        result = result['data']
         for dict_item in result:
             dict_item['code'] = code
 
@@ -260,6 +261,7 @@ class Creon:
         self.obj_CpSysDib_CpSvr7238.SetInputValue(0, 'A'+code) 
 
         result = self.request(self.obj_CpSysDib_CpSvr7238, dict(zip(range(len(_keys)), _keys)), n=n)
+        result = result['data']
         for dict_item in result:
             dict_item['code'] = code
 
@@ -311,6 +313,7 @@ class Creon:
         self.obj_CpSysDib_CpSvr7254.SetInputValue(6, ord('1'))  # '1': 순매수량, '2': 추정금액(백만원)
         
         result = self.request(self.obj_CpSysDib_CpSvr7254, dict(zip(range(len(_keys)), _keys)), cntidx=1, n=n)
+        result = result['data']
         for dict_item in result:
             dict_item['code'] = code
             dict_item['confirm'] = chr(dict_item['confirm'])
@@ -338,6 +341,7 @@ class Creon:
         self.obj_CpSysDib_CpSvr8548.SetInputValue(0, ord(target))  # '1': KOSPI200, '2': 거래소전체, '4': 코스닥전체
 
         result = self.request(self.obj_CpSysDib_CpSvr8548, dict(zip(range(len(_keys)), _keys)))
+        result = result['data']
 
         str_today = util.get_str_today()
         market = ''
