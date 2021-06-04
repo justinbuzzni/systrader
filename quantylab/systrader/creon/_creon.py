@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import sys
 import os
 import time
 import argparse
@@ -12,7 +13,7 @@ from quantylab.systrader import util
 
 
 class Creon:
-    def __init__(self):
+    def __init__(self, account_no=''):
         self.obj_CpUtil_CpCybos = win32com.client.Dispatch('CpUtil.CpCybos')
         self.obj_CpUtil_CpCodeMgr = win32com.client.Dispatch('CpUtil.CpCodeMgr')
         self.obj_CpSysDib_StockChart = win32com.client.Dispatch('CpSysDib.StockChart')
@@ -23,6 +24,9 @@ class Creon:
         self.obj_CpTrade_CpTdNew5331A = win32com.client.Dispatch('CpTrade.CpTdNew5331A')
         self.obj_CpSysDib_CpSvr7254 = win32com.client.Dispatch('CpSysDib.CpSvr7254')
         self.obj_CpSysDib_CpSvr8548 = win32com.client.Dispatch('CpSysDib.CpSvr8548')
+        self.obj_CpTrade_CpTd0311 = win32com.client.Dispatch('CpTrade.CpTd0311')
+        self.obj_CpTrade_CpTd5341 = win32com.client.Dispatch('CpTrade.CpTd5341')
+        self.obj_CpTrade_CpTd6033 = win32com.client.Dispatch('CpTrade.CpTd6033')
         
         # contexts
         self.stockcur_handlers = {}  # 주식/업종/ELW시세 subscribe event handlers
@@ -66,7 +70,7 @@ class Creon:
         if remain_count <= 3:
             time.sleep(remain_time / 1000)
 
-    def request(self, obj, keys, cntidx=0, n=None):
+    def request(self, obj, data_fields, header_fields=None, cntidx=0, n=None):
         def process():
             obj.BlockRequest()
 
@@ -76,23 +80,28 @@ class Creon:
                 return None
 
             cnt = obj.GetHeaderValue(cntidx)
-            list_item = []
+            data = []
             for i in range(cnt):
-                dict_item = {k: obj.GetDataValue(j, cnt-1-i) for j, k in enumerate(keys)}
-                list_item.append(dict_item)
-            return list_item
+                dict_item = {k: obj.GetDataValue(j, cnt-1-i) for j, k in data_fields.items()}
+                data.append(dict_item)
+            return data
 
         # 연속조회 처리
-        result = process()
+        data = process()
         while obj.Continue:
             self.wait()
-            _list_item = process()
-            if len(_list_item) > 0:
-                result = _list_item + result
-                if n is not None and n <= len(result):
+            _data = process()
+            if len(_data) > 0:
+                data = _data + data
+                if n is not None and n <= len(data):
                     break
             else:
                 break
+
+        result = {'data': data}
+        if header_fields is not None:
+            result['header'] = {k: obj.GetHeaderValue(i) for i, k in header_fields.items()}
+
         return result
 
     def get_stockcodes(self, code):
@@ -226,7 +235,7 @@ class Creon:
         self.obj_CpSysDib_StockChart.SetInputValue(6, ord(unit))
         self.obj_CpSysDib_StockChart.SetInputValue(9, ord('1')) # 0: 무수정주가, 1: 수정주가
 
-        result = self.request(self.obj_CpSysDib_StockChart, _keys, cntidx=3, n=n)
+        result = self.request(self.obj_CpSysDib_StockChart, dict(zip(range(len(_keys)), _keys)), cntidx=3, n=n)
         for dict_item in result:
             dict_item['code'] = code
 
@@ -250,7 +259,7 @@ class Creon:
 
         self.obj_CpSysDib_CpSvr7238.SetInputValue(0, 'A'+code) 
 
-        result = self.request(self.obj_CpSysDib_CpSvr7238, _keys, n=n)
+        result = self.request(self.obj_CpSysDib_CpSvr7238, dict(zip(range(len(_keys)), _keys)), n=n)
         for dict_item in result:
             dict_item['code'] = code
 
@@ -301,7 +310,7 @@ class Creon:
         self.obj_CpSysDib_CpSvr7254.SetInputValue(5, 0)
         self.obj_CpSysDib_CpSvr7254.SetInputValue(6, ord('1'))  # '1': 순매수량, '2': 추정금액(백만원)
         
-        result = self.request(self.obj_CpSysDib_CpSvr7254, _keys, cntidx=1, n=n)
+        result = self.request(self.obj_CpSysDib_CpSvr7254, dict(zip(range(len(_keys)), _keys)), cntidx=1, n=n)
         for dict_item in result:
             dict_item['code'] = code
             dict_item['confirm'] = chr(dict_item['confirm'])
@@ -328,7 +337,7 @@ class Creon:
 
         self.obj_CpSysDib_CpSvr8548.SetInputValue(0, ord(target))  # '1': KOSPI200, '2': 거래소전체, '4': 코스닥전체
 
-        result = self.request(self.obj_CpSysDib_CpSvr8548, _keys)
+        result = self.request(self.obj_CpSysDib_CpSvr8548, dict(zip(range(len(_keys)), _keys)))
 
         str_today = util.get_str_today()
         market = ''
@@ -374,6 +383,101 @@ class Creon:
             obj = self.stockcur_handlers[code]
             obj.Unsubscribe()
             del self.stockcur_handlers[code]
+
+    def init_trade(self):
+        if self.obj_CpTrade_CpTdUtil.TradeInit(0) != 0:
+            print("TradeInit failed.", file=sys.stderr)
+            return
+        account_no = self.obj_CpTrade_CpTdUtil.AccountNumber[0]  # 계좌번호
+        account_gflags = self.obj_CpTrade_CpTdUtil.GoodsList(account_no, 1)  # 주식상품 구분
+        return account_no, account_gflags
+
+    def order(self, action, code, amount):
+        if not code.startswith('A'):
+            code = 'A' + code
+        account_no, account_gflags = self.init_trade()
+        self.obj_CpTrade_CpTd0311.SetInputValue(0, action)  # 1: 매도, 2: 매수
+        self.obj_CpTrade_CpTd0311.SetInputValue(1, account_no)  # 계좌번호
+        self.obj_CpTrade_CpTd0311.SetInputValue(2, account_gflags[0])  # 상품구분
+        self.obj_CpTrade_CpTd0311.SetInputValue(3, code)  # 종목코드
+        self.obj_CpTrade_CpTd0311.SetInputValue(4, amount)  # 매수수량
+        self.obj_CpTrade_CpTd0311.SetInputValue(8, '03')  # 시장가
+        result = self.obj_CpTrade_CpTd0311.BlockRequest()
+        if result != 0:
+            print('buy request failed.', file=sys.stderr)
+        status = self.obj_CpTrade_CpTd0311.GetDibStatus()
+        msg = self.obj_CpTrade_CpTd0311.GetDibMsg1()
+        if status != 0:
+            print('buy failed. {}'.format(msg), file=sys.stderr)
+
+    def buy(self, code, amount):
+        return self.order('2', code, amount)
+
+    def sell(self, code, amount):
+        return self.order('1', code, amount)
+
+    def get_trade_history(self):
+        account_no, account_gflags = self.init_trade()
+        self.obj_CpTrade_CpTd5341.SetInputValue(0, account_no)
+        self.obj_CpTrade_CpTd5341.SetInputValue(1, account_gflags[0])  # 상품구분
+
+        _fields = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 22, 24]
+        _keys = [
+            '상품관리구분코드', '주문번호', '원주문번호', '종목코드', '종목이름', 
+            '주문내용', '주문호가구분코드내용', '주문수량', '주문단가', '총체결수량', 
+            '체결수량', '체결단가', '확인수량', '정정취소구분내용 ', '거부사유내용', 
+            '채권매수일', '거래세과세구분내용', '현금신용대용구분내용', '주문입력매체코드내용', 
+            '정정취소가능수량', '매매구분',
+        ]
+
+        result = self.request(self.obj_CpTrade_CpTd5341, dict(zip(_fields, _keys)), cntidx=6)
+        return result
+
+    def get_balance(self):
+        """
+        0 - (string) 계좌번호
+        1 - (string) 상품관리구분코드
+        2 - (long) 요청건수[default:14] - 최대 50개
+        3 - (string) 수익률구분코드 - ( "1" : 100% 기준, "2": 0% 기준)
+        """
+        account_no, account_gflags = self.init_trade()
+        self.obj_CpTrade_CpTd6033.SetInputValue(0, account_no)
+        self.obj_CpTrade_CpTd6033.SetInputValue(1, account_gflags[0])
+        self.obj_CpTrade_CpTd6033.SetInputValue(3, '2')
+
+        header_fields = {
+            0: '계좌명',
+            1: '결제잔고수량',
+            2: '체결잔고수량',
+            3: '총평가금액',
+            4: '평가손익',
+            6: '대출금액',
+            7: '수신개수',
+            8: '수익율',
+        }
+
+        data_fields = {
+            0: '종목명',
+            1: '신용구분',
+            2: '대출일',
+            3: '결제잔고수량',
+            4: '결제장부단가',
+            5: '전일체결수량',
+            6: '금일체결수량',
+            7: '체결잔고수량',
+            9: '평가금액',
+            10: '평가손익',
+            11: '수익률',
+            12: '종목코드',
+            13: '주문구분',
+            15: '매도가능수량',
+            16: '만기일',
+            17: '체결장부단가',
+            18: '손익단가',
+        }
+
+        result = self.request(self.obj_CpTrade_CpTd6033, data_fields, header_fields=header_fields, cntidx=7)
+        return result
 
 
 class StockCurEventHandler:
