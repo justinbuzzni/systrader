@@ -4,10 +4,10 @@ quantylab/__init__.py
 quantylab/systrader/__init__.py
 quantylab/systrader/util.py
 quantylab/systrader/creon/__init__.py
+quantylab/systrader/creon/_creon.py
 quantylab/systrader/creon/bridge_django.py
 quantylab/systrader/creon/bridge_flask.py
 quantylab/systrader/creon/constants.py
-quantylab/systrader/creon/control.py
 quantylab/systrader/kiwoom/__init__.py
 quantylab/systrader/kiwoom/kiwoom.py
 quantylab/systrader/kiwoom/bridge_tornado/__init__.py
