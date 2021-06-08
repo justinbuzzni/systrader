@@ -5,6 +5,7 @@ import os
 import time
 import argparse
 import subprocess
+import abc
 
 import win32com.client
 from pywinauto import application
@@ -27,9 +28,11 @@ class Creon:
         self.obj_CpTrade_CpTd0311 = win32com.client.Dispatch('CpTrade.CpTd0311')
         self.obj_CpTrade_CpTd5341 = win32com.client.Dispatch('CpTrade.CpTd5341')
         self.obj_CpTrade_CpTd6033 = win32com.client.Dispatch('CpTrade.CpTd6033')
+        self.obj_Dscbo1_CpConclusion = win32com.client.Dispatch('CpTrade.CpTd6033')
         
         # contexts
         self.stockcur_handlers = {}  # 주식/업종/ELW시세 subscribe event handlers
+        self.orderevent_handler = None
 
     def connect(self, id_, pwd, pwdcert, trycnt=300):
         if not self.connected():
@@ -388,6 +391,19 @@ class Creon:
             obj.Unsubscribe()
             del self.stockcur_handlers[code]
 
+    def subscribe_orderevent(self, cb):
+        # https://money2.creontrade.com/e5/mboard/ptype_basic/HTS_Plus_Helper/DW_Basic_Read_Page.aspx?boardseq=285&seq=16&page=3&searchString=%EC%8B%A4%EC%8B%9C%EA%B0%84&p=&v=&m=
+        obj = win32com.client.Dispatch('Dscbo1.CpConclusion')
+        handler = win32com.client.WithEvents(obj, OrderEventHandler)
+        handler.set_attrs(obj, cb)
+        self.orderevent_handler = obj
+        obj.Subscribe()
+
+    def unsubscribe_orderevent(self):
+        if self.orderevent_handler is not None:
+            self.orderevent_handler.Unsubscribe()
+            self.orderevent_handler = None
+
     def init_trade(self):
         if self.obj_CpTrade_CpTdUtil.TradeInit(0) != 0:
             print("TradeInit failed.", file=sys.stderr)
@@ -408,11 +424,11 @@ class Creon:
         self.obj_CpTrade_CpTd0311.SetInputValue(8, '03')  # 시장가
         result = self.obj_CpTrade_CpTd0311.BlockRequest()
         if result != 0:
-            print('buy request failed.', file=sys.stderr)
+            print('order request failed.', file=sys.stderr)
         status = self.obj_CpTrade_CpTd0311.GetDibStatus()
         msg = self.obj_CpTrade_CpTd0311.GetDibMsg1()
         if status != 0:
-            print('buy failed. {}'.format(msg), file=sys.stderr)
+            print('order failed. {}'.format(msg), file=sys.stderr)
 
     def buy(self, code, amount):
         return self.order('2', code, amount)
@@ -484,11 +500,17 @@ class Creon:
         return result
 
 
-class StockCurEventHandler:
+class EventHandler:
     def set_attrs(self, obj, cb):
         self.obj = obj
         self.cb = cb
 
+    @abc.abstractmethod
+    def OnReceived(self):
+        pass
+
+
+class StockCurEventHandler(EventHandler):
     def OnReceived(self):
         item = {
             'code': self.obj.GetHeaderValue(0),
@@ -518,6 +540,27 @@ class StockCurEventHandler:
             '체결상태(호가방식)':self.obj.GetHeaderValue(26),
             '누적매도체결수량(호가방식)':self.obj.GetHeaderValue(27),
             '누적매수체결수량(호가방식)':self.obj.GetHeaderValue(28),
+        }
+        self.cb(item)
+
+
+class OrderEventHandler(EventHandler):
+    def OnReceived(self):
+        item = {
+            '계좌명': self.obj.GetHeaderValue(1),
+            'name': self.obj.GetHeaderValue(2),
+            '체결수량': self.obj.GetHeaderValue(3),
+            '체결가격': self.obj.GetHeaderValue(4),
+            '주문번호': self.obj.GetHeaderValue(5),
+            '원주문번호': self.obj.GetHeaderValue(6),
+            '계좌번호': self.obj.GetHeaderValue(7),
+            '상품관리구분코드': self.obj.GetHeaderValue(8),
+            '종목코드': self.obj.GetHeaderValue(9),
+            '매매구분코드': self.obj.GetHeaderValue(12),
+            '체결구분코드': self.obj.GetHeaderValue(14),
+            '체결구분코드': self.obj.GetHeaderValue(14),
+            '체결구분코드': self.obj.GetHeaderValue(14),
+            '현금신용대용구분코드': self.obj.GetHeaderValue(17),
         }
         self.cb(item)
 
